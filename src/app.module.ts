@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserModel } from './models/UserModel';
+import { Transaction } from './models/transaction.entity';
+import { User } from './models/user.entity';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { MoneyModule } from './money/money.module';
@@ -21,7 +22,7 @@ import * as process from 'node:process';
       username: process.env.POSTGRES_USER,
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
-      entities: [UserModel],
+      entities: [User, Transaction],
 
       // remove in prod mode
       synchronize: true,

@@ -34,7 +34,7 @@ export class AuthService {
     const data = { id: userId };
 
     const accessToken = this.jwt.sign(data, {
-      expiresIn: '1h',
+      expiresIn: '2h',
     });
 
     const refreshToken = this.jwt.sign(data, {
@@ -46,11 +46,9 @@ export class AuthService {
 
   private async validateUser(dto: AuthDto) {
     const user = await this.usersService.getByEmail(dto.email);
-
     if (!user) throw new NotFoundException('User not found');
 
     const isValid = await bcrypt.compare(dto.password, user.password);
-
     if (!isValid) throw new UnauthorizedException('Invalid password');
 
     return user;

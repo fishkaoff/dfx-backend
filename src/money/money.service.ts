@@ -1,54 +1,63 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { UserModel } from '../models/UserModel';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Transaction, TransactionType } from '../models/transaction.entity';
+import { User } from '../models/user.entity';
 import { UsersService } from '../users/users.service';
-import { EditMoneyDto } from './dtos/edit-money.dto';
+import { NewTransactionDto } from './dtos/transaction.dto';
 
 @Injectable()
 export class MoneyService {
-  constructor(private readonly usersService: UsersService) {
+  constructor(
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
+    private readonly usersService: UsersService,
+  ) {
   }
 
-  async addMoney({ id, amount }: EditMoneyDto): Promise<UserModel> {
-    const user = await this.usersService.getById(id);
-    if (!user) throw new BadRequestException('User not found');
+  async newTransaction(dto: NewTransactionDto) {
+    const foundUser = await this.usersService.getById(dto.userId);
+    if (!foundUser) throw new NotFoundException('User not found');
 
+    const transaction = new Transaction(dto);
+
+    let user: User;
+
+    if (dto.transaction_type == TransactionType.DEPOSIT) {
+      user = this.deposit(foundUser, dto.amount);
+    } else {
+      user = this.transfer(foundUser, dto.amount);
+    }
+    transaction.user = user;
+
+
+    // TODO: compare in transaction
+    await this.usersService.update(user);
+    await this.transactionRepository.save(transaction);
+
+    return this.usersService.getById(dto.userId);
+  }
+
+  private deposit = (user: User, amount: number): User => {
     user.balance += amount;
     user.can_spend_today = this.recalculateAvailableMoney(user.balance, this.getDaysUntilPayday());
+    return user;
+  };
 
-    return await this.usersService.update(user);
-  }
-
-  async withdraw({ id, amount }: EditMoneyDto): Promise<UserModel> {
-    const user = await this.usersService.getById(id);
-    if (!user) throw new BadRequestException('User not found');
-    if (user.balance < amount) throw new BadRequestException('Current balance is lower than amount');
-
+  private transfer = (user: User, amount: number): User => {
     user.balance -= amount;
-    user.can_spend_today -= amount;
-
-    return await this.usersService.update(user);
-  }
+    user.can_spend_today = this.recalculateAvailableMoney(user.balance, this.getDaysUntilPayday());
+    return user;
+  };
 
   private recalculateAvailableMoney(balance: number, daysUntilPayday: number): number {
     const fixedNum = (balance / daysUntilPayday).toFixed(2);
     return parseFloat(fixedNum);
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  private async dailySpendsRecalculation() {
-    console.info('Started daily spends recalculation');
-    const users = await this.usersService.getAll();
-    const daysUntilPayday = this.getDaysUntilPayday();
-
-    for (let user of users) {
-      user.can_spend_today = this.recalculateAvailableMoney(user.balance, daysUntilPayday);
-      await this.usersService.update(user);
-    }
-
-    console.info('Finished daily spends recalculation');
-  }
-
+  // TODO: Need fix
+  // When date is about 20, 23 returns incorrect data
   private getDaysUntilPayday(): number {
     const currentDate: Date = new Date();
     const currentMonth: number = currentDate.getMonth();
@@ -69,4 +78,19 @@ export class MoneyService {
 
     return daysDifference;
   }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  private async dailySpendsRecalculation() {
+    console.info('Started daily spends recalculation');
+    const users = await this.usersService.getAll();
+    const daysUntilPayday = this.getDaysUntilPayday();
+
+    for (let user of users) {
+      user.can_spend_today = this.recalculateAvailableMoney(user.balance, daysUntilPayday);
+      await this.usersService.update(user);
+    }
+
+    console.info('Finished daily spends recalculation');
+  }
+
 }
